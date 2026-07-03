@@ -31,4 +31,15 @@ nonisolated struct RaycastHit: Sendable, Equatable {
     let ray: SonarRay
     let distance: Float
     let worldPosition: simd_float3
+    /// Unit normal of the struck surface, when the platform provides one.
+    /// Distinguishes a stair tread (faces up) from a furniture front (faces
+    /// sideways) at the same hit point — position alone cannot.
+    let surfaceNormal: simd_float3?
+
+    init(ray: SonarRay, distance: Float, worldPosition: simd_float3, surfaceNormal: simd_float3? = nil) {
+        self.ray = ray
+        self.distance = distance
+        self.worldPosition = worldPosition
+        self.surfaceNormal = surfaceNormal
+    }
 }

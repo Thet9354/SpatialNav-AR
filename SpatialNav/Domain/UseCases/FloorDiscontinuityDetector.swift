@@ -24,6 +24,10 @@ nonisolated struct FloorDiscontinuityDetector: HazardAnalyzing {
     /// The near hit must be at least this far below the camera to count as a
     /// floor reference; anything higher is furniture, and no judgment is made.
     var minFloorReferenceDepth: Float = 1.0
+    /// A surface counts as walkable (floor/tread) only if its normal points
+    /// up at least this much (~45°). A drawer front 30 cm up produces the same
+    /// hit point as a stair tread 30 cm up; the normal is what tells them apart.
+    var minUpFacingNormalY: Float = 0.7
 
     func hazards(from hits: [RaycastHit], frame: ARFrameSnapshot) -> [Hazard] {
         let near = hits.first { $0.ray == SonarConfiguration.nearFloorProbe }
@@ -32,7 +36,9 @@ nonisolated struct FloorDiscontinuityDetector: HazardAnalyzing {
         guard let near else { return [] }
 
         let camera = frame.cameraTransform.translation
-        guard camera.y - near.worldPosition.y >= minFloorReferenceDepth else { return [] }
+        guard camera.y - near.worldPosition.y >= minFloorReferenceDepth, isWalkableSurface(near) else {
+            return []
+        }
 
         guard let far else {
             return [Hazard(
@@ -47,12 +53,21 @@ nonisolated struct FloorDiscontinuityDetector: HazardAnalyzing {
         let distance = horizontalDistance(from: camera, to: far.worldPosition)
 
         if heightDelta < -dropThreshold {
+            // Deliberately not gated on the far surface normal: descending
+            // stairs often present a riser face, and missing a drop-off is
+            // worse than a rare extra caution.
             return [Hazard(id: UUID(), kind: .dropOff, distance: distance, direction: .twelve)]
         }
-        if heightDelta > riseThreshold, heightDelta <= maxRiseThreshold {
+        if heightDelta > riseThreshold, heightDelta <= maxRiseThreshold, isWalkableSurface(far) {
             return [Hazard(id: UUID(), kind: .stairsUp, distance: distance, direction: .twelve)]
         }
         return []
+    }
+
+    /// Hits without a normal (older data, test fixtures) are treated as
+    /// walkable so the absence of metadata never disables a safety warning.
+    private func isWalkableSurface(_ hit: RaycastHit) -> Bool {
+        hit.surfaceNormal.map { $0.y >= minUpFacingNormalY } ?? true
     }
 
     private func horizontalDistance(from camera: simd_float3, to point: simd_float3) -> Float {

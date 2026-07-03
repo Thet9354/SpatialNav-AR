@@ -181,10 +181,17 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
                     )
                     guard let result = self.session.raycast(query).first else { return nil }
                     let position = result.worldTransform.translation
+                    // Raycast result orientation: +Y matches the surface normal.
+                    let normal = simd_normalize(simd_float3(
+                        result.worldTransform.columns.1.x,
+                        result.worldTransform.columns.1.y,
+                        result.worldTransform.columns.1.z
+                    ))
                     return RaycastHit(
                         ray: ray,
                         distance: simd_distance(position, worldRay.origin),
-                        worldPosition: position
+                        worldPosition: position,
+                        surfaceNormal: normal
                     )
                 }
                 continuation.resume(returning: hits)
