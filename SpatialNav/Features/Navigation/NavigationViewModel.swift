@@ -45,11 +45,16 @@ final class NavigationViewModel {
     private let sonar: SonarSweepUseCase
     private let objectDetection: ObjectDetectionUseCase?
     private let governor: any PerformanceGoverning
+    private let audio: any SpatialAudioServicing
+    private let speech: any SpeechServicing
+    private let audioMap = SonarAudioMap()
     private var streamTasks: [Task<Void, Never>] = []
     private var hazardDebouncer = HazardDebouncer()
     private var alertPolicy = HazardAlertPolicy()
     private var lastMeshCountRefresh: TimeInterval = 0
     private var lastSonarLog: TimeInterval = 0
+    private var lastObstaclePing: TimeInterval = 0
+    private var lastItemPing: TimeInterval = 0
     private let logger = Logger(subsystem: "com.thetpine.spatialnav", category: "sonar")
 
     init(
@@ -58,7 +63,9 @@ final class NavigationViewModel {
         cameraAuthorizer: any CameraAuthorizing,
         sonar: SonarSweepUseCase,
         objectDetection: ObjectDetectionUseCase?,
-        governor: any PerformanceGoverning
+        governor: any PerformanceGoverning,
+        audio: any SpatialAudioServicing,
+        speech: any SpeechServicing
     ) {
         self.provider = provider
         self.meshStore = meshStore
@@ -66,6 +73,8 @@ final class NavigationViewModel {
         self.sonar = sonar
         self.objectDetection = objectDetection
         self.governor = governor
+        self.audio = audio
+        self.speech = speech
     }
 
     func guide(to item: SavedItem) {
@@ -107,6 +116,11 @@ final class NavigationViewModel {
             await objectDetection.start()
         }
         await governor.start()
+        do {
+            try await audio.startEngine()
+        } catch {
+            logger.error("Spatial audio unavailable: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     func stop() {
@@ -118,7 +132,13 @@ final class NavigationViewModel {
             Task { await objectDetection.stop() }
         }
         let governor = governor
-        Task { await governor.stop() }
+        let audio = audio
+        let speech = speech
+        Task {
+            await governor.stop()
+            await audio.stopEngine()
+            await speech.stopSpeaking()
+        }
         provider.stop()
         if phase == .running || phase == .interrupted {
             phase = .idle
@@ -172,14 +192,19 @@ final class NavigationViewModel {
         provider.setMLSampleRate(framesPerSecond: tier.mlFramesPerSecond)
         logger.notice("Processing tier changed to \(String(describing: tier), privacy: .public)")
         if downgraded {
-            // Degradation is announced, never silent — Week 5 routes this to speech.
-            latestAlert = FeedbackEvent(
+            // Degradation is announced, never silent.
+            let event = FeedbackEvent(
                 kind: .status,
                 priority: .low,
                 direction: nil,
                 distance: nil,
                 message: "Reducing detail to keep the phone cool and save battery."
             )
+            latestAlert = event
+            let speech = speech
+            Task {
+                await speech.announce(event.message ?? "", priority: event.priority)
+            }
         }
     }
 
@@ -198,6 +223,8 @@ final class NavigationViewModel {
 
         // Sweeping inline applies natural backpressure: while a sweep is in
         // flight the stream (bufferingNewest 1) drops frames instead of queuing.
+        await audio.updateListener(transform: snapshot.cameraTransform)
+
         let result = await sonar.sweep(frame: snapshot, rayCount: processingTier.sonarRayCount)
         nearestObstacle = result.obstacles.min { $0.distance < $1.distance }
         activeHazards = hazardDebouncer.ingest(result.hazards)
@@ -209,10 +236,45 @@ final class NavigationViewModel {
         ).first {
             latestAlert = alert
             logger.info("Alert: \(alert.message ?? "—", privacy: .public)")
+            if let message = alert.message {
+                await speech.announce(message, priority: alert.priority)
+            }
+        }
+
+        // Sonar Mode: the nearest obstacle pings from its true direction,
+        // faster and higher-pitched as it gets closer.
+        if let nearest = nearestObstacle,
+           snapshot.timestamp - lastObstaclePing >= audioMap.pulseInterval(forDistance: nearest.distance) {
+            lastObstaclePing = snapshot.timestamp
+            await audio.play(
+                FeedbackEvent(
+                    kind: .obstacleProximity,
+                    priority: .normal,
+                    direction: nearest.direction,
+                    distance: nearest.distance,
+                    message: nil
+                ),
+                at: nearest.worldPosition
+            )
         }
 
         if let target = guidedItem?.lastKnownPosition {
-            itemGuidance = ItemGuidance.toward(target, from: snapshot.cameraTransform)
+            let guidance = ItemGuidance.toward(target, from: snapshot.cameraTransform)
+            itemGuidance = guidance
+            // Item beacon: a distinct ping from the item's location.
+            if snapshot.timestamp - lastItemPing >= audioMap.pulseInterval(forDistance: guidance.distance) {
+                lastItemPing = snapshot.timestamp
+                await audio.play(
+                    FeedbackEvent(
+                        kind: .itemPing,
+                        priority: .normal,
+                        direction: guidance.direction,
+                        distance: guidance.distance,
+                        message: nil
+                    ),
+                    at: target
+                )
+            }
         }
 
         logSonar(at: snapshot.timestamp)

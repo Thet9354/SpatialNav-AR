@@ -19,6 +19,8 @@ final class AppContainer {
     let governor: PerformanceGovernor
     let itemStore: ItemStore
     let findItem: FindItemUseCase
+    let audioEngine: SpatialAudioEngine
+    let speechQueue: SpeechQueue
 
     init() {
         let meshStore = MeshStore()
@@ -48,6 +50,8 @@ final class AppContainer {
             featurePrinter: FeaturePrintService(),
             itemStore: itemStore
         )
+        self.audioEngine = SpatialAudioEngine()
+        self.speechQueue = SpeechQueue()
     }
 
     func makeNavigationScreen() -> NavigationScreen {
@@ -62,7 +66,9 @@ final class AppContainer {
                 cameraAuthorizer: cameraAuthorizer,
                 sonar: sonar,
                 objectDetection: objectDetection,
-                governor: governor
+                governor: governor,
+                audio: audioEngine,
+                speech: speechQueue
             ),
             arViewContainer: ARViewContainer(session: arSessionManager.session),
             makeSpacesViewModel: { [arSessionManager, spaceStore] in
