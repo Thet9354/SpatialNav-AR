@@ -50,8 +50,13 @@ nonisolated final class SonarSweepUseCase: Sendable {
         self.configuration = configuration
     }
 
-    func sweep(frame: ARFrameSnapshot) async -> SonarSweepResult {
-        let hits = await provider.raycast(configuration.allRays)
+    /// `rayCount` lets the performance governor thin the fan under thermal
+    /// pressure; floor probes are safety-critical and always cast.
+    func sweep(frame: ARFrameSnapshot, rayCount: Int? = nil) async -> SonarSweepResult {
+        let count = rayCount ?? configuration.rayCount
+        let rays = SonarRay.fan(count: count, arc: configuration.horizontalArc)
+            + [SonarConfiguration.nearFloorProbe, SonarConfiguration.farFloorProbe]
+        let hits = await provider.raycast(rays)
         return SonarSweepResult(
             obstacles: Self.obstacles(from: hits, frame: frame, configuration: configuration),
             hazards: hazardAnalyzer.hazards(from: hits, frame: frame)

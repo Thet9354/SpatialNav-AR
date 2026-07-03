@@ -11,18 +11,22 @@ import UIKit
 struct NavigationScreen: View {
     @State private var viewModel: NavigationViewModel
     @State private var showingSpaces = false
+    @State private var showingItems = false
     private let arViewContainer: ARViewContainer
     private let makeSpacesViewModel: () -> SpacesViewModel
+    private let makeItemsViewModel: () -> ItemsViewModel
     @Environment(\.openURL) private var openURL
 
     init(
         viewModel: NavigationViewModel,
         arViewContainer: ARViewContainer,
-        makeSpacesViewModel: @escaping () -> SpacesViewModel
+        makeSpacesViewModel: @escaping () -> SpacesViewModel,
+        makeItemsViewModel: @escaping () -> ItemsViewModel
     ) {
         _viewModel = State(initialValue: viewModel)
         self.arViewContainer = arViewContainer
         self.makeSpacesViewModel = makeSpacesViewModel
+        self.makeItemsViewModel = makeItemsViewModel
     }
 
     var body: some View {
@@ -61,6 +65,11 @@ struct NavigationScreen: View {
         .sheet(isPresented: $showingSpaces) {
             SpacesSheet(viewModel: makeSpacesViewModel())
         }
+        .sheet(isPresented: $showingItems) {
+            ItemsSheet(viewModel: makeItemsViewModel()) { item in
+                viewModel.guide(to: item)
+            }
+        }
     }
 
     private var statusOverlay: some View {
@@ -83,6 +92,14 @@ struct NavigationScreen: View {
             HStack {
                 Spacer()
                 Button {
+                    showingItems = true
+                } label: {
+                    Label("Items", systemImage: "viewfinder")
+                        .padding(10)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .accessibilityHint("Save an item you're pointing at, or find a saved one")
+                Button {
                     showingSpaces = true
                 } label: {
                     Label("Spaces", systemImage: "square.grid.2x2")
@@ -93,6 +110,20 @@ struct NavigationScreen: View {
             }
             .padding(.horizontal)
             Spacer()
+            if let item = viewModel.guidedItem, let guidance = viewModel.itemGuidance {
+                HStack {
+                    Text(guidanceDescription(item: item, guidance: guidance))
+                        .font(.headline)
+                    Spacer()
+                    Button("Stop") { viewModel.stopGuiding() }
+                        .buttonStyle(.bordered)
+                        .accessibilityLabel("Stop guiding to \(item.name)")
+                }
+                .padding(12)
+                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .padding(.horizontal)
+                .accessibilityElement(children: .combine)
+            }
             VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.trackingQuality.statusDescription)
                     .font(.headline)
@@ -111,6 +142,11 @@ struct NavigationScreen: View {
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 }
+                if viewModel.processingTier < .full {
+                    Text("Power saving — reduced detail")
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                }
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
@@ -124,6 +160,16 @@ struct NavigationScreen: View {
         guard let obstacle = viewModel.nearestObstacle else { return "Path clear" }
         let distance = String(format: "%.1f", obstacle.distance)
         return "Nearest obstacle: \(distance) m at \(obstacle.direction.spokenDescription)"
+    }
+
+    private func guidanceDescription(item: SavedItem, guidance: ItemGuidance) -> String {
+        var description = String(format: "%@ · %.1f m at %@", item.name, guidance.distance, guidance.direction.spokenDescription)
+        if guidance.heightDelta > 0.3 {
+            description += ", above you"
+        } else if guidance.heightDelta < -1.2 {
+            description += ", low down"
+        }
+        return description
     }
 
     private var detectedObjectsDescription: String {

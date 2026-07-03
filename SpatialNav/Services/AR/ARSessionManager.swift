@@ -34,6 +34,7 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
     private var frameContinuations: [UUID: AsyncStream<ARFrameSnapshot>.Continuation] = [:]
     private var eventContinuations: [UUID: AsyncStream<ARSessionEvent>.Continuation] = [:]
     private var pixelBufferContinuations: [UUID: AsyncStream<PixelBufferSnapshot>.Continuation] = [:]
+    private var oneShotPixelContinuations: [UUID: CheckedContinuation<PixelBufferSnapshot?, Never>] = [:]
     private var pixelSampler = FrameSampler(framesPerSecond: 5)
 
     init(meshStore: any MeshStoring, snapshotsPerSecond: Double = 10) {
@@ -142,6 +143,27 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
         }
     }
 
+    func captureNextPixelBuffer() async -> PixelBufferSnapshot? {
+        await withCheckedContinuation { continuation in
+            delegateQueue.async {
+                let id = UUID()
+                self.oneShotPixelContinuations[id] = continuation
+                // Session paused/interrupted delivers no frames; don't hang forever.
+                self.delegateQueue.asyncAfter(deadline: .now() + 1.5) {
+                    if let pending = self.oneShotPixelContinuations.removeValue(forKey: id) {
+                        pending.resume(returning: nil)
+                    }
+                }
+            }
+        }
+    }
+
+    func setMLSampleRate(framesPerSecond: Double) {
+        delegateQueue.async {
+            self.pixelSampler.setRate(framesPerSecond: framesPerSecond)
+        }
+    }
+
     func raycast(_ rays: [SonarRay]) async -> [RaycastHit] {
         await withCheckedContinuation { continuation in
             delegateQueue.async {
@@ -187,9 +209,11 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
             continuation.yield(snapshot)
         }
 
-        // Camera buffers are only touched when the ML pipeline is listening and
-        // the sampler admits this frame; otherwise the ARFrame is left untouched.
-        if !pixelBufferContinuations.isEmpty, pixelSampler.shouldEmit(at: frame.timestamp) {
+        // Camera buffers are only touched when someone is listening and the
+        // sampler admits this frame; otherwise the ARFrame is left untouched.
+        let wantsSampledFrame = !pixelBufferContinuations.isEmpty && pixelSampler.shouldEmit(at: frame.timestamp)
+        let wantsOneShot = !oneShotPixelContinuations.isEmpty
+        if wantsSampledFrame || wantsOneShot {
             let pixelSnapshot = PixelBufferSnapshot(
                 buffer: frame.capturedImage,
                 timestamp: frame.timestamp,
@@ -197,8 +221,16 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
                 intrinsics: frame.camera.intrinsics,
                 imageResolution: frame.camera.imageResolution
             )
-            for continuation in pixelBufferContinuations.values {
-                continuation.yield(pixelSnapshot)
+            if wantsSampledFrame {
+                for continuation in pixelBufferContinuations.values {
+                    continuation.yield(pixelSnapshot)
+                }
+            }
+            if wantsOneShot {
+                for continuation in oneShotPixelContinuations.values {
+                    continuation.resume(returning: pixelSnapshot)
+                }
+                oneShotPixelContinuations.removeAll()
             }
         }
     }

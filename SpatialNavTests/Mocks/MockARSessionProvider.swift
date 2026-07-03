@@ -15,10 +15,12 @@ final class MockARSessionProvider: ARSessionProviding, @unchecked Sendable {
     )
     var scriptedHits: [RaycastHit] = []
     var scriptedWorldMapData = Data()
+    var scriptedPixelBuffer: PixelBufferSnapshot?
     var startError: Error?
     private(set) var started = false
     private(set) var raycastCallCount = 0
     private(set) var restoredWorldMapData: Data?
+    private(set) var mlSampleRates: [Double] = []
 
     func frames() -> AsyncStream<ARFrameSnapshot> {
         AsyncStream { $0.finish() }
@@ -30,6 +32,14 @@ final class MockARSessionProvider: ARSessionProviding, @unchecked Sendable {
 
     func pixelBuffers() -> AsyncStream<PixelBufferSnapshot> {
         AsyncStream { $0.finish() }
+    }
+
+    func captureNextPixelBuffer() async -> PixelBufferSnapshot? {
+        scriptedPixelBuffer
+    }
+
+    func setMLSampleRate(framesPerSecond: Double) {
+        mlSampleRates.append(framesPerSecond)
     }
 
     func start() throws {

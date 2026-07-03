@@ -26,6 +26,10 @@ final class NavigationViewModel {
     private(set) var nearestObstacle: Obstacle?
     private(set) var activeHazards: [Hazard] = []
     private(set) var detectedObjects: [DetectedObject] = []
+    private(set) var latestAlert: FeedbackEvent?
+    private(set) var processingTier: ProcessingTier = .full
+    private(set) var guidedItem: SavedItem?
+    private(set) var itemGuidance: ItemGuidance?
 
     var lidarAvailable: Bool {
         provider.capabilities.supportsSceneReconstruction
@@ -40,8 +44,10 @@ final class NavigationViewModel {
     private let cameraAuthorizer: any CameraAuthorizing
     private let sonar: SonarSweepUseCase
     private let objectDetection: ObjectDetectionUseCase?
+    private let governor: any PerformanceGoverning
     private var streamTasks: [Task<Void, Never>] = []
     private var hazardDebouncer = HazardDebouncer()
+    private var alertPolicy = HazardAlertPolicy()
     private var lastMeshCountRefresh: TimeInterval = 0
     private var lastSonarLog: TimeInterval = 0
     private let logger = Logger(subsystem: "com.thetpine.spatialnav", category: "sonar")
@@ -51,13 +57,24 @@ final class NavigationViewModel {
         meshStore: any MeshStoring,
         cameraAuthorizer: any CameraAuthorizing,
         sonar: SonarSweepUseCase,
-        objectDetection: ObjectDetectionUseCase?
+        objectDetection: ObjectDetectionUseCase?,
+        governor: any PerformanceGoverning
     ) {
         self.provider = provider
         self.meshStore = meshStore
         self.cameraAuthorizer = cameraAuthorizer
         self.sonar = sonar
         self.objectDetection = objectDetection
+        self.governor = governor
+    }
+
+    func guide(to item: SavedItem) {
+        guidedItem = item
+    }
+
+    func stopGuiding() {
+        guidedItem = nil
+        itemGuidance = nil
     }
 
     func start() async {
@@ -89,15 +106,19 @@ final class NavigationViewModel {
         if let objectDetection {
             await objectDetection.start()
         }
+        await governor.start()
     }
 
     func stop() {
         streamTasks.forEach { $0.cancel() }
         streamTasks.removeAll()
         hazardDebouncer.reset()
+        alertPolicy.reset()
         if let objectDetection {
             Task { await objectDetection.stop() }
         }
+        let governor = governor
+        Task { await governor.stop() }
         provider.stop()
         if phase == .running || phase == .interrupted {
             phase = .idle
@@ -132,6 +153,34 @@ final class NavigationViewModel {
             }
             streamTasks.append(detectionTask)
         }
+
+        let tierTask = Task { [weak self] in
+            guard let governor = self?.governor else { return }
+            let tiers = await governor.tiers()
+            for await tier in tiers {
+                guard let self, !Task.isCancelled else { return }
+                self.apply(tier)
+            }
+        }
+        streamTasks.append(tierTask)
+    }
+
+    private func apply(_ tier: ProcessingTier) {
+        guard tier != processingTier else { return }
+        let downgraded = tier < processingTier
+        processingTier = tier
+        provider.setMLSampleRate(framesPerSecond: tier.mlFramesPerSecond)
+        logger.notice("Processing tier changed to \(String(describing: tier), privacy: .public)")
+        if downgraded {
+            // Degradation is announced, never silent — Week 5 routes this to speech.
+            latestAlert = FeedbackEvent(
+                kind: .status,
+                priority: .low,
+                direction: nil,
+                distance: nil,
+                message: "Reducing detail to keep the phone cool and save battery."
+            )
+        }
     }
 
     private func handle(_ snapshot: ARFrameSnapshot) async {
@@ -149,9 +198,23 @@ final class NavigationViewModel {
 
         // Sweeping inline applies natural backpressure: while a sweep is in
         // flight the stream (bufferingNewest 1) drops frames instead of queuing.
-        let result = await sonar.sweep(frame: snapshot)
+        let result = await sonar.sweep(frame: snapshot, rayCount: processingTier.sonarRayCount)
         nearestObstacle = result.obstacles.min { $0.distance < $1.distance }
         activeHazards = hazardDebouncer.ingest(result.hazards)
+
+        if let alert = alertPolicy.events(
+            hazards: activeHazards,
+            nearestObstacle: nearestObstacle,
+            at: snapshot.timestamp
+        ).first {
+            latestAlert = alert
+            logger.info("Alert: \(alert.message ?? "—", privacy: .public)")
+        }
+
+        if let target = guidedItem?.lastKnownPosition {
+            itemGuidance = ItemGuidance.toward(target, from: snapshot.cameraTransform)
+        }
+
         logSonar(at: snapshot.timestamp)
     }
 

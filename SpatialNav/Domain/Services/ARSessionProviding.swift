@@ -20,6 +20,14 @@ nonisolated protocol ARSessionProviding: Sendable {
     /// accumulate retained camera buffers and starve ARKit's pool.
     func pixelBuffers() -> AsyncStream<PixelBufferSnapshot>
 
+    /// One-shot grab of the next camera frame (item registration). Returns nil
+    /// if no frame arrives promptly (session paused or interrupted).
+    func captureNextPixelBuffer() async -> PixelBufferSnapshot?
+
+    /// Retunes the ML sampling gate; 0 disables ML frames entirely.
+    /// Called by the performance governor on tier changes.
+    func setMLSampleRate(framesPerSecond: Double)
+
     func start() throws
     func stop()
 

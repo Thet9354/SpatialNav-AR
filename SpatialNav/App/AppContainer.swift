@@ -16,6 +16,9 @@ final class AppContainer {
     let cameraAuthorizer: any CameraAuthorizing
     let spaceStore: SpaceStore
     let objectDetection: ObjectDetectionUseCase?
+    let governor: PerformanceGovernor
+    let itemStore: ItemStore
+    let findItem: FindItemUseCase
 
     init() {
         let meshStore = MeshStore()
@@ -34,6 +37,17 @@ final class AppContainer {
             Logger(subsystem: "com.thetpine.spatialnav", category: "ml")
                 .notice("Object detection disabled — no CoreML model bundled. See scripts/convert_yolo_to_coreml.py")
         }
+
+        self.governor = PerformanceGovernor()
+        let itemsDirectory = (try? ItemStore.defaultDirectory())
+            ?? FileManager.default.temporaryDirectory.appendingPathComponent("Items", isDirectory: true)
+        let itemStore = ItemStore(directory: itemsDirectory)
+        self.itemStore = itemStore
+        self.findItem = FindItemUseCase(
+            provider: arSessionManager,
+            featurePrinter: FeaturePrintService(),
+            itemStore: itemStore
+        )
     }
 
     func makeNavigationScreen() -> NavigationScreen {
@@ -47,11 +61,15 @@ final class AppContainer {
                 meshStore: meshStore,
                 cameraAuthorizer: cameraAuthorizer,
                 sonar: sonar,
-                objectDetection: objectDetection
+                objectDetection: objectDetection,
+                governor: governor
             ),
             arViewContainer: ARViewContainer(session: arSessionManager.session),
             makeSpacesViewModel: { [arSessionManager, spaceStore] in
                 SpacesViewModel(store: spaceStore, provider: arSessionManager)
+            },
+            makeItemsViewModel: { [findItem] in
+                ItemsViewModel(findItem: findItem)
             }
         )
     }
