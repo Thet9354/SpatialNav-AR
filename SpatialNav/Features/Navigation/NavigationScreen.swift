@@ -98,6 +98,10 @@ struct NavigationScreen: View {
                     .font(.headline)
                 Text(nearestObstacleDescription)
                     .font(.subheadline)
+                if viewModel.objectDetectionAvailable {
+                    Text(detectedObjectsDescription)
+                        .font(.subheadline)
+                }
                 if viewModel.lidarAvailable {
                     Text("\(viewModel.worldMappingStatus.statusDescription) · \(viewModel.meshAnchorCount) mesh regions")
                         .font(.subheadline)
@@ -120,6 +124,21 @@ struct NavigationScreen: View {
         guard let obstacle = viewModel.nearestObstacle else { return "Path clear" }
         let distance = String(format: "%.1f", obstacle.distance)
         return "Nearest obstacle: \(distance) m at \(obstacle.direction.spokenDescription)"
+    }
+
+    private var detectedObjectsDescription: String {
+        guard let object = viewModel.detectedObjects.first else { return "No objects recognized" }
+        var description = object.label
+        if let distance = object.distance {
+            description += String(format: " · %.1f m", distance)
+        }
+        if let direction = object.direction {
+            description += " at \(direction.spokenDescription)"
+        }
+        if viewModel.detectedObjects.count > 1 {
+            description += " (+\(viewModel.detectedObjects.count - 1) more)"
+        }
+        return description
     }
 
     private var permissionDeniedView: some View {

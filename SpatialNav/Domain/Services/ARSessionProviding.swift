@@ -15,6 +15,11 @@ nonisolated protocol ARSessionProviding: Sendable {
     func frames() -> AsyncStream<ARFrameSnapshot>
     func events() -> AsyncStream<ARSessionEvent>
 
+    /// Camera frames for the ML pipeline, pre-gated to the ML sampling rate.
+    /// Buffering is capped at one snapshot so a slow consumer can never
+    /// accumulate retained camera buffers and starve ARKit's pool.
+    func pixelBuffers() -> AsyncStream<PixelBufferSnapshot>
+
     func start() throws
     func stop()
 

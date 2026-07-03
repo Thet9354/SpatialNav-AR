@@ -28,6 +28,10 @@ final class MockARSessionProvider: ARSessionProviding, @unchecked Sendable {
         AsyncStream { $0.finish() }
     }
 
+    func pixelBuffers() -> AsyncStream<PixelBufferSnapshot> {
+        AsyncStream { $0.finish() }
+    }
+
     func start() throws {
         if let startError { throw startError }
         started = true

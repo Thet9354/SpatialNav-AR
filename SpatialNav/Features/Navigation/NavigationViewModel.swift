@@ -25,15 +25,21 @@ final class NavigationViewModel {
     private(set) var meshAnchorCount = 0
     private(set) var nearestObstacle: Obstacle?
     private(set) var activeHazards: [Hazard] = []
+    private(set) var detectedObjects: [DetectedObject] = []
 
     var lidarAvailable: Bool {
         provider.capabilities.supportsSceneReconstruction
+    }
+
+    var objectDetectionAvailable: Bool {
+        objectDetection != nil
     }
 
     private let provider: any ARSessionProviding
     private let meshStore: any MeshStoring
     private let cameraAuthorizer: any CameraAuthorizing
     private let sonar: SonarSweepUseCase
+    private let objectDetection: ObjectDetectionUseCase?
     private var streamTasks: [Task<Void, Never>] = []
     private var lastMeshCountRefresh: TimeInterval = 0
     private var lastSonarLog: TimeInterval = 0
@@ -43,12 +49,14 @@ final class NavigationViewModel {
         provider: any ARSessionProviding,
         meshStore: any MeshStoring,
         cameraAuthorizer: any CameraAuthorizing,
-        sonar: SonarSweepUseCase
+        sonar: SonarSweepUseCase,
+        objectDetection: ObjectDetectionUseCase?
     ) {
         self.provider = provider
         self.meshStore = meshStore
         self.cameraAuthorizer = cameraAuthorizer
         self.sonar = sonar
+        self.objectDetection = objectDetection
     }
 
     func start() async {
@@ -77,11 +85,17 @@ final class NavigationViewModel {
         }
         phase = .running
         observeStreams()
+        if let objectDetection {
+            await objectDetection.start()
+        }
     }
 
     func stop() {
         streamTasks.forEach { $0.cancel() }
         streamTasks.removeAll()
+        if let objectDetection {
+            Task { await objectDetection.stop() }
+        }
         provider.stop()
         if phase == .running || phase == .interrupted {
             phase = .idle
@@ -105,6 +119,17 @@ final class NavigationViewModel {
             }
         }
         streamTasks = [frameTask, eventTask]
+
+        if let objectDetection {
+            let detectionTask = Task { [weak self] in
+                let results = await objectDetection.results()
+                for await objects in results {
+                    guard let self, !Task.isCancelled else { return }
+                    self.detectedObjects = objects.sorted { ($0.distance ?? .infinity) < ($1.distance ?? .infinity) }
+                }
+            }
+            streamTasks.append(detectionTask)
+        }
     }
 
     private func handle(_ snapshot: ARFrameSnapshot) async {
@@ -138,6 +163,9 @@ final class NavigationViewModel {
         }
         for hazard in activeHazards {
             logger.warning("\(hazard.kind.warningDescription, privacy: .public) — \(hazard.distance, format: .fixed(precision: 1)) m")
+        }
+        if let nearest = detectedObjects.first, let distance = nearest.distance {
+            logger.debug("Object: \(nearest.label, privacy: .public) \(distance, format: .fixed(precision: 1)) m (\(self.detectedObjects.count) tracked)")
         }
     }
 

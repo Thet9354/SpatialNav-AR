@@ -15,4 +15,7 @@ nonisolated struct DetectedObject: Identifiable, Sendable, Equatable {
     let boundingBox: CGRect
     /// Filled once the detection is corroborated by a raycast against the scene mesh.
     let worldPosition: simd_float3?
+    /// Camera distance (meters) at the corroborating raycast.
+    let distance: Float?
+    let direction: ClockDirection?
 }

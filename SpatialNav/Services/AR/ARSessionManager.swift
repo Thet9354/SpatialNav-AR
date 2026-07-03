@@ -33,6 +33,8 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
     private var lastMeshForwardTime: TimeInterval = 0
     private var frameContinuations: [UUID: AsyncStream<ARFrameSnapshot>.Continuation] = [:]
     private var eventContinuations: [UUID: AsyncStream<ARSessionEvent>.Continuation] = [:]
+    private var pixelBufferContinuations: [UUID: AsyncStream<PixelBufferSnapshot>.Continuation] = [:]
+    private var pixelSampler = FrameSampler(framesPerSecond: 5)
 
     init(meshStore: any MeshStoring, snapshotsPerSecond: Double = 10) {
         self.meshStore = meshStore
@@ -127,6 +129,19 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
         }
     }
 
+    func pixelBuffers() -> AsyncStream<PixelBufferSnapshot> {
+        // bufferingNewest(1): at most one camera buffer is ever retained for a
+        // busy consumer (~200 ms at 5 fps), keeping ARKit's buffer pool healthy.
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            let id = UUID()
+            continuation.onTermination = { [weak self] _ in
+                guard let self else { return }
+                self.delegateQueue.async { self.pixelBufferContinuations[id] = nil }
+            }
+            delegateQueue.async { self.pixelBufferContinuations[id] = continuation }
+        }
+    }
+
     func raycast(_ rays: [SonarRay]) async -> [RaycastHit] {
         await withCheckedContinuation { continuation in
             delegateQueue.async {
@@ -170,6 +185,21 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
         )
         for continuation in frameContinuations.values {
             continuation.yield(snapshot)
+        }
+
+        // Camera buffers are only touched when the ML pipeline is listening and
+        // the sampler admits this frame; otherwise the ARFrame is left untouched.
+        if !pixelBufferContinuations.isEmpty, pixelSampler.shouldEmit(at: frame.timestamp) {
+            let pixelSnapshot = PixelBufferSnapshot(
+                buffer: frame.capturedImage,
+                timestamp: frame.timestamp,
+                cameraTransform: frame.camera.transform,
+                intrinsics: frame.camera.intrinsics,
+                imageResolution: frame.camera.imageResolution
+            )
+            for continuation in pixelBufferContinuations.values {
+                continuation.yield(pixelSnapshot)
+            }
         }
     }
 
