@@ -21,4 +21,12 @@ nonisolated protocol ARSessionProviding: Sendable {
     /// Casts camera-relative rays against the reconstructed scene.
     /// Rays that hit nothing are omitted from the result.
     func raycast(_ rays: [SonarRay]) async -> [RaycastHit]
+
+    /// Captures the current world map as an opaque, compressed archive.
+    /// Fails until the session has mapped enough of the space.
+    func captureWorldMapData() async throws -> Data
+
+    /// Restarts the session relocalizing into a previously captured map.
+    /// Progress surfaces as `TrackingQuality.limited(.relocalizing)` on frames.
+    func restoreWorldMap(from data: Data) throws
 }

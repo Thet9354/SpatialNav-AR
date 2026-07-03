@@ -13,6 +13,8 @@ nonisolated enum ARSessionEvent: Sendable, Equatable {
 
 nonisolated enum ARSessionError: Error, Equatable {
     case worldTrackingUnsupported
+    case worldMapUnavailable
+    case invalidWorldMapData
 }
 
 nonisolated struct ARCapabilities: Sendable, Equatable {

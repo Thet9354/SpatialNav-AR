@@ -5,6 +5,10 @@
 
 import Foundation
 
+nonisolated enum SpaceStoreError: Error, Equatable {
+    case mapDataMissing
+}
+
 nonisolated protocol SpaceStoring: Sendable {
     func savedSpaces() async throws -> [SavedSpace]
     /// `worldMapData` is the opaque, compressed ARWorldMap archive.

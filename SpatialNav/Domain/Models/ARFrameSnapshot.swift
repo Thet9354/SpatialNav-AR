@@ -13,6 +13,23 @@ nonisolated struct ARFrameSnapshot: Sendable {
     let timestamp: TimeInterval
     let cameraTransform: simd_float4x4
     let trackingQuality: TrackingQuality
+    let worldMappingStatus: WorldMappingStatus
+}
+
+nonisolated enum WorldMappingStatus: Sendable, Equatable {
+    case notAvailable
+    case limited
+    case extending
+    case mapped
+
+    var statusDescription: String {
+        switch self {
+        case .notAvailable: "Room scan not started"
+        case .limited: "Scanning room — keep looking around"
+        case .extending: "Scanning room — almost there"
+        case .mapped: "Room scan complete"
+        }
+    }
 }
 
 nonisolated enum TrackingQuality: Sendable, Equatable {

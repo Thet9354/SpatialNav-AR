@@ -28,6 +28,7 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
 
     private var latestCameraTransform: simd_float4x4?
     private var latestTrackingQuality: TrackingQuality = .notAvailable
+    private var latestWorldMappingStatus: WorldMappingStatus = .notAvailable
     private var lastSnapshotTimestamp: TimeInterval = 0
     private var lastMeshForwardTime: TimeInterval = 0
     private var frameContinuations: [UUID: AsyncStream<ARFrameSnapshot>.Continuation] = [:]
@@ -55,6 +56,40 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
         guard ARWorldTrackingConfiguration.isSupported else {
             throw ARSessionError.worldTrackingUnsupported
         }
+        session.run(makeConfiguration(), options: [.resetTracking, .removeExistingAnchors])
+    }
+
+    func stop() {
+        session.pause()
+    }
+
+    func captureWorldMapData() async throws -> Data {
+        try await withCheckedThrowingContinuation { continuation in
+            session.getCurrentWorldMap { map, error in
+                guard let map else {
+                    continuation.resume(throwing: error ?? ARSessionError.worldMapUnavailable)
+                    return
+                }
+                do {
+                    continuation.resume(returning: try WorldMapCodec.encode(map))
+                } catch {
+                    continuation.resume(throwing: error)
+                }
+            }
+        }
+    }
+
+    func restoreWorldMap(from data: Data) throws {
+        guard ARWorldTrackingConfiguration.isSupported else {
+            throw ARSessionError.worldTrackingUnsupported
+        }
+        let map = try WorldMapCodec.decode(data)
+        let configuration = makeConfiguration()
+        configuration.initialWorldMap = map
+        session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
+    }
+
+    private func makeConfiguration() -> ARWorldTrackingConfiguration {
         let configuration = ARWorldTrackingConfiguration()
         configuration.planeDetection = [.horizontal, .vertical]
         configuration.environmentTexturing = .none
@@ -67,11 +102,7 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
         if ARWorldTrackingConfiguration.supportsFrameSemantics(.smoothedSceneDepth) {
             configuration.frameSemantics.insert(.smoothedSceneDepth)
         }
-        session.run(configuration, options: [.resetTracking, .removeExistingAnchors])
-    }
-
-    func stop() {
-        session.pause()
+        return configuration
     }
 
     func frames() -> AsyncStream<ARFrameSnapshot> {
@@ -128,12 +159,14 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
 
     func session(_ session: ARSession, didUpdate frame: ARFrame) {
         latestCameraTransform = frame.camera.transform
+        latestWorldMappingStatus = WorldMappingStatus(frame.worldMappingStatus)
         guard frame.timestamp - lastSnapshotTimestamp >= snapshotInterval else { return }
         lastSnapshotTimestamp = frame.timestamp
         let snapshot = ARFrameSnapshot(
             timestamp: frame.timestamp,
             cameraTransform: frame.camera.transform,
-            trackingQuality: latestTrackingQuality
+            trackingQuality: latestTrackingQuality,
+            worldMappingStatus: latestWorldMappingStatus
         )
         for continuation in frameContinuations.values {
             continuation.yield(snapshot)
@@ -196,6 +229,18 @@ nonisolated final class ARSessionManager: NSObject, ARSessionProviding, ARSessio
         }
         let store = meshStore
         Task { await store.apply(snapshots) }
+    }
+}
+
+extension WorldMappingStatus {
+    fileprivate nonisolated init(_ status: ARFrame.WorldMappingStatus) {
+        switch status {
+        case .notAvailable: self = .notAvailable
+        case .limited: self = .limited
+        case .extending: self = .extending
+        case .mapped: self = .mapped
+        @unknown default: self = .limited
+        }
     }
 }
 

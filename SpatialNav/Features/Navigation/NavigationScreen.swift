@@ -10,12 +10,19 @@ import UIKit
 
 struct NavigationScreen: View {
     @State private var viewModel: NavigationViewModel
+    @State private var showingSpaces = false
     private let arViewContainer: ARViewContainer
+    private let makeSpacesViewModel: () -> SpacesViewModel
     @Environment(\.openURL) private var openURL
 
-    init(viewModel: NavigationViewModel, arViewContainer: ARViewContainer) {
+    init(
+        viewModel: NavigationViewModel,
+        arViewContainer: ARViewContainer,
+        makeSpacesViewModel: @escaping () -> SpacesViewModel
+    ) {
         _viewModel = State(initialValue: viewModel)
         self.arViewContainer = arViewContainer
+        self.makeSpacesViewModel = makeSpacesViewModel
     }
 
     var body: some View {
@@ -51,6 +58,9 @@ struct NavigationScreen: View {
         }
         .task { await viewModel.start() }
         .onDisappear { viewModel.stop() }
+        .sheet(isPresented: $showingSpaces) {
+            SpacesSheet(viewModel: makeSpacesViewModel())
+        }
     }
 
     private var statusOverlay: some View {
@@ -62,12 +72,34 @@ struct NavigationScreen: View {
                     .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Guidance paused")
             }
+            if let hazard = viewModel.activeHazards.max(by: { $0.priority < $1.priority }) {
+                Text(hazard.kind.warningDescription)
+                    .font(.title3.bold())
+                    .foregroundStyle(.white)
+                    .padding(12)
+                    .background(.red, in: RoundedRectangle(cornerRadius: 12))
+                    .accessibilityAddTraits(.isStaticText)
+            }
+            HStack {
+                Spacer()
+                Button {
+                    showingSpaces = true
+                } label: {
+                    Label("Spaces", systemImage: "square.grid.2x2")
+                        .padding(10)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .accessibilityHint("Save this room or return to a saved one")
+            }
+            .padding(.horizontal)
             Spacer()
             VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.trackingQuality.statusDescription)
                     .font(.headline)
+                Text(nearestObstacleDescription)
+                    .font(.subheadline)
                 if viewModel.lidarAvailable {
-                    Text("Mapped regions: \(viewModel.meshAnchorCount)")
+                    Text("\(viewModel.worldMappingStatus.statusDescription) · \(viewModel.meshAnchorCount) mesh regions")
                         .font(.subheadline)
                         .foregroundStyle(.secondary)
                 } else {
@@ -82,6 +114,12 @@ struct NavigationScreen: View {
             .padding()
             .accessibilityElement(children: .combine)
         }
+    }
+
+    private var nearestObstacleDescription: String {
+        guard let obstacle = viewModel.nearestObstacle else { return "Path clear" }
+        let distance = String(format: "%.1f", obstacle.distance)
+        return "Nearest obstacle: \(distance) m at \(obstacle.direction.spokenDescription)"
     }
 
     private var permissionDeniedView: some View {

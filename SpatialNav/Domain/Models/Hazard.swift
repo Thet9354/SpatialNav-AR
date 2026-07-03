@@ -13,6 +13,17 @@ nonisolated struct Hazard: Identifiable, Sendable, Equatable {
         case headHeight
         case person
         case obstacle
+
+        var warningDescription: String {
+            switch self {
+            case .dropOff: "Caution — drop-off ahead"
+            case .stairsUp: "Stairs going up ahead"
+            case .stairsDown: "Caution — stairs going down"
+            case .headHeight: "Head-height obstacle ahead"
+            case .person: "Person ahead"
+            case .obstacle: "Obstacle ahead"
+            }
+        }
     }
 
     let id: UUID
