@@ -9,9 +9,11 @@ import SwiftUI
 
 @main
 struct SpatialNavApp: App {
+    @State private var container = AppContainer()
+
     var body: some Scene {
         WindowGroup {
-            ContentView()
+            container.makeNavigationScreen()
         }
     }
 }
