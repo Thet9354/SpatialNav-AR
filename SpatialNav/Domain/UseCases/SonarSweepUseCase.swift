@@ -15,8 +15,10 @@ nonisolated struct SonarConfiguration: Sendable {
 
     /// Floor probes for discontinuity (drop-off/stairs) detection.
     /// At eye height (~1.5 m) the near probe lands ~0.6 m ahead, the far probe ~1.6 m.
-    static let nearFloorProbe = SonarRay(azimuth: 0, elevation: -1.2)
-    static let farFloorProbe = SonarRay(azimuth: 0, elevation: -0.75)
+    /// Gravity-aligned: angles are below the horizon, not below the camera axis,
+    /// so tilting the phone up at a shelf can't swing them onto furniture.
+    static let nearFloorProbe = SonarRay(azimuth: 0, elevation: -1.2, gravityAligned: true)
+    static let farFloorProbe = SonarRay(azimuth: 0, elevation: -0.75, gravityAligned: true)
 
     static let `default` = SonarConfiguration()
 

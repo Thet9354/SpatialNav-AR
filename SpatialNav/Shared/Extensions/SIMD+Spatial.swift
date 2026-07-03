@@ -26,17 +26,55 @@ extension simd_float4x4 {
 }
 
 nonisolated enum RayMath {
-    /// Converts a camera-relative SonarRay into a world-space ray.
-    /// Elevation is applied about the camera's right axis first, then azimuth
-    /// about the camera's up axis (negated: azimuth is clockwise-positive,
-    /// right-hand rotation about up is counterclockwise).
+    /// Converts a SonarRay into a world-space ray.
+    /// Elevation is applied about the right axis first, then azimuth about the
+    /// up axis (negated: azimuth is clockwise-positive, right-hand rotation
+    /// about up is counterclockwise). Camera-relative rays use the camera's
+    /// axes; gravity-aligned rays use the world up axis and the camera's
+    /// heading projected onto the horizontal plane, so device pitch/roll
+    /// cannot tilt them.
     static func worldRay(
         cameraTransform: simd_float4x4,
         ray: SonarRay
     ) -> (origin: simd_float3, direction: simd_float3) {
-        let azimuthRotation = simd_quatf(angle: -ray.azimuth, axis: cameraTransform.upVector)
-        let elevationRotation = simd_quatf(angle: ray.elevation, axis: cameraTransform.rightVector)
-        let direction = simd_normalize(azimuthRotation.act(elevationRotation.act(cameraTransform.forwardVector)))
-        return (cameraTransform.translation, direction)
+        let forward: simd_float3
+        let up: simd_float3
+        let right: simd_float3
+
+        gravity: if ray.gravityAligned {
+            // ARKit world alignment is .gravity, so world +Y is up.
+            let worldUp = simd_float3(0, 1, 0)
+            let cameraForward = cameraTransform.forwardVector
+            let horizontal = cameraForward - worldUp * simd_dot(cameraForward, worldUp)
+            let length = simd_length(horizontal)
+            // Camera pointing near straight up/down: heading is undefined,
+            // fall back to camera-relative axes.
+            guard length > 1e-4 else { break gravity }
+            forward = horizontal / length
+            up = worldUp
+            right = simd_normalize(simd_cross(forward, worldUp))
+            return compose(origin: cameraTransform.translation, forward: forward, up: up, right: right, ray: ray)
+        }
+
+        return compose(
+            origin: cameraTransform.translation,
+            forward: cameraTransform.forwardVector,
+            up: cameraTransform.upVector,
+            right: cameraTransform.rightVector,
+            ray: ray
+        )
+    }
+
+    private static func compose(
+        origin: simd_float3,
+        forward: simd_float3,
+        up: simd_float3,
+        right: simd_float3,
+        ray: SonarRay
+    ) -> (origin: simd_float3, direction: simd_float3) {
+        let azimuthRotation = simd_quatf(angle: -ray.azimuth, axis: up)
+        let elevationRotation = simd_quatf(angle: ray.elevation, axis: right)
+        let direction = simd_normalize(azimuthRotation.act(elevationRotation.act(forward)))
+        return (origin, direction)
     }
 }

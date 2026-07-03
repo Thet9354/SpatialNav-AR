@@ -68,4 +68,23 @@ struct FloorDiscontinuityDetectorTests {
         let hazards = detector.hazards(from: [], frame: frame)
         #expect(hazards.isEmpty)
     }
+
+    @Test func nearProbeOnFurnitureIsNotAFloorReference() {
+        // Near probe lands on a chair seat 0.6 m below the camera (< 1.0 m gate):
+        // no judgment, even though the far probe is missing entirely.
+        let chairSeat = RaycastHit(
+            ray: SonarConfiguration.nearFloorProbe,
+            distance: 1.0,
+            worldPosition: simd_float3(0, 0.9, -0.6)
+        )
+        let hazards = detector.hazards(from: [chairSeat], frame: frame)
+        #expect(hazards.isEmpty)
+    }
+
+    @Test func farProbeOnFurnitureIsNotStairs() {
+        // Far probe hits a desk 0.6 m above the floor: beyond a plausible stair
+        // rise, so the fan reports it as an obstacle instead of stairs.
+        let hazards = detector.hazards(from: [nearHit(), farHit(floorHeight: 0.6)], frame: frame)
+        #expect(hazards.isEmpty)
+    }
 }

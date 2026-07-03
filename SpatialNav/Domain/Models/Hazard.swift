@@ -6,7 +6,7 @@
 import Foundation
 
 nonisolated struct Hazard: Identifiable, Sendable, Equatable {
-    nonisolated enum Kind: Sendable, Equatable {
+    nonisolated enum Kind: Sendable, Equatable, Hashable {
         case dropOff
         case stairsUp
         case stairsDown

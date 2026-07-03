@@ -41,6 +41,7 @@ final class NavigationViewModel {
     private let sonar: SonarSweepUseCase
     private let objectDetection: ObjectDetectionUseCase?
     private var streamTasks: [Task<Void, Never>] = []
+    private var hazardDebouncer = HazardDebouncer()
     private var lastMeshCountRefresh: TimeInterval = 0
     private var lastSonarLog: TimeInterval = 0
     private let logger = Logger(subsystem: "com.thetpine.spatialnav", category: "sonar")
@@ -93,6 +94,7 @@ final class NavigationViewModel {
     func stop() {
         streamTasks.forEach { $0.cancel() }
         streamTasks.removeAll()
+        hazardDebouncer.reset()
         if let objectDetection {
             Task { await objectDetection.stop() }
         }
@@ -149,7 +151,7 @@ final class NavigationViewModel {
         // flight the stream (bufferingNewest 1) drops frames instead of queuing.
         let result = await sonar.sweep(frame: snapshot)
         nearestObstacle = result.obstacles.min { $0.distance < $1.distance }
-        activeHazards = result.hazards
+        activeHazards = hazardDebouncer.ingest(result.hazards)
         logSonar(at: snapshot.timestamp)
     }
 
