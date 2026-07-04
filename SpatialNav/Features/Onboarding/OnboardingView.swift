@@ -55,9 +55,11 @@ struct OnboardingView: View {
             VStack(alignment: .leading, spacing: 4) {
                 Text(title)
                     .font(.headline)
+                // .primary, not .secondary: on the card fill, secondary text
+                // fails the accessibility contrast audit (low-vision users are
+                // this app's audience). Hierarchy comes from the font instead.
                 Text(description)
                     .font(.subheadline)
-                    .foregroundStyle(.secondary)
                     .multilineTextAlignment(.leading)
             }
             .frame(maxWidth: .infinity, alignment: .leading)

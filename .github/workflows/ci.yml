@@ -1,0 +1,35 @@
+# Build + unit tests on every push/PR to main.
+# The project needs an Xcode 26 toolchain (Swift 6 mode with default
+# MainActor isolation). If the runner's latest-stable is older, pin
+# xcode-version explicitly below.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+jobs:
+  build-and-test:
+    runs-on: macos-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - name: Pick an iPhone simulator
+        run: |
+          UDID=$(xcrun simctl list devices available -j | jq -r '[.devices[] | .[] | select(.name | startswith("iPhone"))][0].udid')
+          echo "SIMULATOR_UDID=$UDID" >> "$GITHUB_ENV"
+
+      - name: Run unit tests
+        run: |
+          xcodebuild test \
+            -project SpatialNav.xcodeproj \
+            -scheme SpatialNav \
+            -destination "platform=iOS Simulator,id=$SIMULATOR_UDID" \
+            -only-testing:SpatialNavTests

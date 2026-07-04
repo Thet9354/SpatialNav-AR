@@ -59,6 +59,9 @@ final class AppContainer {
         self.hapticService = HapticEngineService()
         let settingsStore = SettingsStore()
         self.settingsStore = settingsStore
+        if CommandLine.arguments.contains("--uitest-reset") {
+            settingsStore.reset()
+        }
         self.needsOnboarding = !settingsStore.hasSavedProfile
     }
 

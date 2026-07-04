@@ -55,6 +55,7 @@ final class NavigationViewModel {
     private var streamTasks: [Task<Void, Never>] = []
     private var hazardDebouncer = HazardDebouncer()
     private var alertPolicy = HazardAlertPolicy()
+    private var relocalizationWatchdog = RelocalizationWatchdog()
     private var lastMeshCountRefresh: TimeInterval = 0
     private var lastSonarLog: TimeInterval = 0
     private var lastObstaclePing: TimeInterval = 0
@@ -241,6 +242,15 @@ final class NavigationViewModel {
         if snapshot.worldMappingStatus != worldMappingStatus {
             worldMappingStatus = snapshot.worldMappingStatus
         }
+
+        // Stuck relocalization: give up honestly and start a fresh session
+        // rather than guiding on stale data.
+        if relocalizationWatchdog.ingest(quality: snapshot.trackingQuality, at: snapshot.timestamp) {
+            logger.notice("Relocalization timed out — starting a fresh session")
+            announceStatus("I can't recognize this space. Starting fresh.", priority: .high)
+            try? provider.start()
+            return
+        }
         // Mesh count is a coverage indicator for the HUD; 1 Hz is plenty.
         if snapshot.timestamp - lastMeshCountRefresh >= 1.0 {
             lastMeshCountRefresh = snapshot.timestamp
@@ -339,10 +349,29 @@ final class NavigationViewModel {
         switch event {
         case .interrupted:
             phase = .interrupted
+            announceStatus("Guidance paused.", priority: .high)
         case .interruptionEnded:
             phase = .running
+            announceStatus("Guidance resumed.", priority: .high)
         case .failed(let message):
             phase = .failed(message)
+        }
+    }
+
+    /// Status announcements travel through whichever channels the profile allows.
+    private func announceStatus(_ message: String, priority: FeedbackPriority) {
+        let event = FeedbackEvent(kind: .status, priority: priority, direction: nil, distance: nil, message: message)
+        latestAlert = event
+        let channels = router.channels(for: event, profile: profile)
+        let speech = speech
+        let haptics = haptics
+        Task {
+            if channels.speech {
+                await speech.announce(message, priority: priority)
+            }
+            if channels.haptics {
+                await haptics.play(event)
+            }
         }
     }
 }

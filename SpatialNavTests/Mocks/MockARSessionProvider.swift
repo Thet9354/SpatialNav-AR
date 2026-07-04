@@ -30,8 +30,13 @@ final class MockARSessionProvider: ARSessionProviding, @unchecked Sendable {
         AsyncStream { $0.finish() }
     }
 
+    /// Captured so tests can drive frames into the ML pipeline by hand.
+    private(set) var pixelContinuation: AsyncStream<PixelBufferSnapshot>.Continuation?
+
     func pixelBuffers() -> AsyncStream<PixelBufferSnapshot> {
-        AsyncStream { $0.finish() }
+        AsyncStream(bufferingPolicy: .bufferingNewest(1)) { continuation in
+            self.pixelContinuation = continuation
+        }
     }
 
     func captureNextPixelBuffer() async -> PixelBufferSnapshot? {

@@ -33,4 +33,9 @@ nonisolated struct SettingsStore: SettingsStoring, @unchecked Sendable {
         guard let data = try? JSONEncoder().encode(profile) else { return }
         defaults.set(data, forKey: profileKey)
     }
+
+    /// UI tests reset to a fresh-install state via the --uitest-reset argument.
+    func reset() {
+        defaults.removeObject(forKey: profileKey)
+    }
 }
