@@ -16,6 +16,11 @@ actor HapticEngineService: HapticServicing {
     private var engine: CHHapticEngine?
     private var engineRunning = false
 
+    func prepare() {
+        guard supportsHaptics else { return }
+        _ = runningEngine()
+    }
+
     func play(_ event: FeedbackEvent) {
         guard supportsHaptics else { return }
         let pulses = HapticVocabulary.pattern(for: event)
@@ -57,6 +62,8 @@ actor HapticEngineService: HapticServicing {
 
     private func makeEngine() throws -> CHHapticEngine {
         let engine = try CHHapticEngine()
+        // No audio from this engine — skips audio-session negotiation overhead.
+        engine.playsHapticsOnly = true
         engine.resetHandler = { [weak self] in
             Task { await self?.markStopped() }
         }

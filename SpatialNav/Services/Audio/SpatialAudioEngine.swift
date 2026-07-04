@@ -41,6 +41,14 @@ actor SpatialAudioEngine: SpatialAudioServicing {
         try engine.start()
         started = true
         observeEngineHealth()
+
+        // Pre-synthesize the ping range so no first-use synthesis cost lands
+        // mid-alert (~16 short mono buffers; negligible memory).
+        for frequency in stride(from: 400, through: 1250, by: 50) {
+            _ = buffer(for: Float(frequency))
+        }
+        _ = buffer(for: 990) // item beacon
+        _ = buffer(for: 660) // hazard tone
     }
 
     func stopEngine() {

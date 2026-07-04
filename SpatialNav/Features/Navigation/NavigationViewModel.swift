@@ -63,6 +63,7 @@ final class NavigationViewModel {
     private var lastObstaclePing: TimeInterval = 0
     private var lastItemPing: TimeInterval = 0
     private let logger = Logger(subsystem: "com.thetpine.spatialnav", category: "sonar")
+    private let signposter = OSSignposter(subsystem: "com.thetpine.spatialnav", category: "latency")
 
     init(
         provider: any ARSessionProviding,
@@ -167,6 +168,9 @@ final class NavigationViewModel {
         } catch {
             logger.error("Spatial audio unavailable: \(error.localizedDescription, privacy: .public)")
         }
+        // Warm the slow-start engines now so the first alert pays nothing.
+        await haptics.prepare()
+        await speech.prepare()
     }
 
     func stop() {
@@ -298,9 +302,24 @@ final class NavigationViewModel {
         // flight the stream (bufferingNewest 1) drops frames instead of queuing.
         await audio.updateListener(transform: snapshot.cameraTransform)
 
+        let sweepInterval = signposter.beginInterval("sonarSweep")
         let result = await sonar.sweep(frame: snapshot, rayCount: processingTier.sonarRayCount)
         nearestObstacle = result.obstacles.min { $0.distance < $1.distance }
-        activeHazards = hazardDebouncer.ingest(result.hazards)
+
+        var confirmedHazards = hazardDebouncer.ingest(result.hazards)
+        if confirmedHazards.isEmpty, !result.hazards.isEmpty {
+            // Burst confirmation: the debouncer needs three consecutive sweeps,
+            // but nothing says they must come from three frames. Re-measure
+            // immediately — three independent raycasts in milliseconds instead
+            // of waiting ~200 ms of frame cadence while the user walks on.
+            for _ in 0..<2 {
+                let recheck = await sonar.sweep(frame: snapshot, rayCount: processingTier.sonarRayCount)
+                confirmedHazards = hazardDebouncer.ingest(recheck.hazards)
+                if !confirmedHazards.isEmpty || recheck.hazards.isEmpty { break }
+            }
+        }
+        activeHazards = confirmedHazards
+        signposter.endInterval("sonarSweep", sweepInterval)
 
         if let alert = alertPolicy.events(
             hazards: activeHazards,
@@ -309,6 +328,7 @@ final class NavigationViewModel {
         ).first {
             latestAlert = alert
             logger.info("Alert: \(alert.message ?? "—", privacy: .public)")
+            signposter.emitEvent("alertEmitted")
             let channels = router.channels(for: alert, profile: profile)
             if channels.speech, let message = alert.message {
                 await speech.announce(message, priority: alert.priority)

@@ -27,11 +27,31 @@ actor SpeechQueue: SpeechServicing {
         }
     }
 
+    /// Speaking a silent utterance forces the synthesizer to load its voice
+    /// assets now, so the first real alert starts hundreds of ms sooner.
+    func prepare() {
+        let utterance = AVSpeechUtterance(string: " ")
+        utterance.volume = 0
+        synthesizer.speak(utterance)
+    }
+
     func announce(_ message: String, priority: FeedbackPriority) async {
         let voiceOverRunning = await MainActor.run { UIAccessibility.isVoiceOverRunning }
         if voiceOverRunning {
             await MainActor.run {
-                UIAccessibility.post(notification: .announcement, argument: message)
+                // High-priority alerts must interrupt VoiceOver's own speech,
+                // not queue behind it — a drop-off can't wait for a paragraph.
+                if priority >= .high {
+                    let attributed = NSMutableAttributedString(string: message)
+                    attributed.addAttribute(
+                        .accessibilitySpeechAnnouncementPriority,
+                        value: UIAccessibilityPriority.high.rawValue,
+                        range: NSRange(location: 0, length: attributed.length)
+                    )
+                    UIAccessibility.post(notification: .announcement, argument: attributed)
+                } else {
+                    UIAccessibility.post(notification: .announcement, argument: message)
+                }
             }
             return
         }
