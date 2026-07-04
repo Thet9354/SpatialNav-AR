@@ -47,7 +47,11 @@ final class NavigationViewModel {
     private let governor: any PerformanceGoverning
     private let audio: any SpatialAudioServicing
     private let speech: any SpeechServicing
+    private let haptics: any HapticServicing
+    private let settings: any SettingsStoring
     private let audioMap = SonarAudioMap()
+    private let router = FeedbackRouter()
+    private(set) var profile: FeedbackProfile = .default
     private var streamTasks: [Task<Void, Never>] = []
     private var hazardDebouncer = HazardDebouncer()
     private var alertPolicy = HazardAlertPolicy()
@@ -65,7 +69,9 @@ final class NavigationViewModel {
         objectDetection: ObjectDetectionUseCase?,
         governor: any PerformanceGoverning,
         audio: any SpatialAudioServicing,
-        speech: any SpeechServicing
+        speech: any SpeechServicing,
+        haptics: any HapticServicing,
+        settings: any SettingsStoring
     ) {
         self.provider = provider
         self.meshStore = meshStore
@@ -75,6 +81,17 @@ final class NavigationViewModel {
         self.governor = governor
         self.audio = audio
         self.speech = speech
+        self.haptics = haptics
+        self.settings = settings
+    }
+
+    func apply(profile newProfile: FeedbackProfile) {
+        profile = newProfile
+        alertPolicy.obstacleAlertDistance = newProfile.minimumAlertDistance
+        alertPolicy.distanceUnit = newProfile.distanceUnit
+        alertPolicy.strideLengthMeters = newProfile.strideLengthMeters
+        let speech = speech
+        Task { await speech.setRate(newProfile.speechRate) }
     }
 
     func guide(to item: SavedItem) {
@@ -88,6 +105,7 @@ final class NavigationViewModel {
 
     func start() async {
         guard phase != .running else { return }
+        apply(profile: settings.loadProfile())
         guard provider.capabilities.supportsWorldTracking else {
             phase = .unsupportedDevice
             return
@@ -192,7 +210,8 @@ final class NavigationViewModel {
         provider.setMLSampleRate(framesPerSecond: tier.mlFramesPerSecond)
         logger.notice("Processing tier changed to \(String(describing: tier), privacy: .public)")
         if downgraded {
-            // Degradation is announced, never silent.
+            // Degradation is announced, never silent — through whichever
+            // channels the profile allows.
             let event = FeedbackEvent(
                 kind: .status,
                 priority: .low,
@@ -201,9 +220,16 @@ final class NavigationViewModel {
                 message: "Reducing detail to keep the phone cool and save battery."
             )
             latestAlert = event
+            let channels = router.channels(for: event, profile: profile)
             let speech = speech
+            let haptics = haptics
             Task {
-                await speech.announce(event.message ?? "", priority: event.priority)
+                if channels.speech, let message = event.message {
+                    await speech.announce(message, priority: event.priority)
+                }
+                if channels.haptics {
+                    await haptics.play(event)
+                }
             }
         }
     }
@@ -236,44 +262,57 @@ final class NavigationViewModel {
         ).first {
             latestAlert = alert
             logger.info("Alert: \(alert.message ?? "—", privacy: .public)")
-            if let message = alert.message {
+            let channels = router.channels(for: alert, profile: profile)
+            if channels.speech, let message = alert.message {
                 await speech.announce(message, priority: alert.priority)
+            }
+            if channels.haptics {
+                await haptics.play(alert)
             }
         }
 
         // Sonar Mode: the nearest obstacle pings from its true direction,
-        // faster and higher-pitched as it gets closer.
+        // faster and higher-pitched as it gets closer — or thumps harder,
+        // depending on the sensory profile.
         if let nearest = nearestObstacle,
            snapshot.timestamp - lastObstaclePing >= audioMap.pulseInterval(forDistance: nearest.distance) {
             lastObstaclePing = snapshot.timestamp
-            await audio.play(
-                FeedbackEvent(
-                    kind: .obstacleProximity,
-                    priority: .normal,
-                    direction: nearest.direction,
-                    distance: nearest.distance,
-                    message: nil
-                ),
-                at: nearest.worldPosition
+            let ping = FeedbackEvent(
+                kind: .obstacleProximity,
+                priority: .normal,
+                direction: nearest.direction,
+                distance: nearest.distance,
+                message: nil
             )
+            let channels = router.channels(for: ping, profile: profile)
+            if channels.spatialAudio {
+                await audio.play(ping, at: nearest.worldPosition)
+            }
+            if channels.haptics {
+                await haptics.play(ping)
+            }
         }
 
         if let target = guidedItem?.lastKnownPosition {
             let guidance = ItemGuidance.toward(target, from: snapshot.cameraTransform)
             itemGuidance = guidance
-            // Item beacon: a distinct ping from the item's location.
+            // Item beacon: a distinct signature from the item's location.
             if snapshot.timestamp - lastItemPing >= audioMap.pulseInterval(forDistance: guidance.distance) {
                 lastItemPing = snapshot.timestamp
-                await audio.play(
-                    FeedbackEvent(
-                        kind: .itemPing,
-                        priority: .normal,
-                        direction: guidance.direction,
-                        distance: guidance.distance,
-                        message: nil
-                    ),
-                    at: target
+                let beacon = FeedbackEvent(
+                    kind: .itemPing,
+                    priority: .normal,
+                    direction: guidance.direction,
+                    distance: guidance.distance,
+                    message: nil
                 )
+                let channels = router.channels(for: beacon, profile: profile)
+                if channels.spatialAudio {
+                    await audio.play(beacon, at: target)
+                }
+                if channels.haptics {
+                    await haptics.play(beacon)
+                }
             }
         }
 

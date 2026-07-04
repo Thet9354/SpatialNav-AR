@@ -16,6 +16,9 @@ nonisolated struct HazardAlertPolicy: Sendable {
     var hazardApproachDelta: Float = 0.5
     var obstacleCooldown: TimeInterval = 3
     var obstacleAlertDistance: Float = 2.0
+    /// Spoken-distance preferences from the user's profile.
+    var distanceUnit: FeedbackProfile.DistanceUnit = .meters
+    var strideLengthMeters: Float = 0.7
 
     private struct Announcement {
         var time: TimeInterval
@@ -49,11 +52,12 @@ nonisolated struct HazardAlertPolicy: Sendable {
            obstacle.distance <= obstacleAlertDistance,
            time - lastObstacleTime >= obstacleCooldown {
             lastObstacleTime = time
-            let message = String(
-                format: "Obstacle %.1f meters at %@",
-                obstacle.distance,
-                obstacle.direction.spokenDescription
+            let spokenDistance = SpokenDistance.description(
+                meters: obstacle.distance,
+                unit: distanceUnit,
+                strideLengthMeters: strideLengthMeters
             )
+            let message = "Obstacle \(spokenDistance) at \(obstacle.direction.spokenDescription)"
             return [FeedbackEvent(
                 kind: .obstacleProximity,
                 priority: .normal,

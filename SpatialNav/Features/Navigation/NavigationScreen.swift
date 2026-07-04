@@ -12,21 +12,25 @@ struct NavigationScreen: View {
     @State private var viewModel: NavigationViewModel
     @State private var showingSpaces = false
     @State private var showingItems = false
+    @State private var showingSettings = false
     private let arViewContainer: ARViewContainer
     private let makeSpacesViewModel: () -> SpacesViewModel
     private let makeItemsViewModel: () -> ItemsViewModel
+    private let makeSettingsViewModel: (@escaping (FeedbackProfile) -> Void) -> SettingsViewModel
     @Environment(\.openURL) private var openURL
 
     init(
         viewModel: NavigationViewModel,
         arViewContainer: ARViewContainer,
         makeSpacesViewModel: @escaping () -> SpacesViewModel,
-        makeItemsViewModel: @escaping () -> ItemsViewModel
+        makeItemsViewModel: @escaping () -> ItemsViewModel,
+        makeSettingsViewModel: @escaping (@escaping (FeedbackProfile) -> Void) -> SettingsViewModel
     ) {
         _viewModel = State(initialValue: viewModel)
         self.arViewContainer = arViewContainer
         self.makeSpacesViewModel = makeSpacesViewModel
         self.makeItemsViewModel = makeItemsViewModel
+        self.makeSettingsViewModel = makeSettingsViewModel
     }
 
     var body: some View {
@@ -70,6 +74,11 @@ struct NavigationScreen: View {
                 viewModel.guide(to: item)
             }
         }
+        .sheet(isPresented: $showingSettings) {
+            SettingsSheet(viewModel: makeSettingsViewModel { profile in
+                viewModel.apply(profile: profile)
+            })
+        }
     }
 
     private var statusOverlay: some View {
@@ -99,6 +108,7 @@ struct NavigationScreen: View {
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .accessibilityHint("Save an item you're pointing at, or find a saved one")
+                .accessibilityIdentifier(AccessibilityIdentifiers.itemsButton)
                 Button {
                     showingSpaces = true
                 } label: {
@@ -107,6 +117,18 @@ struct NavigationScreen: View {
                         .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
                 }
                 .accessibilityHint("Save this room or return to a saved one")
+                .accessibilityIdentifier(AccessibilityIdentifiers.spacesButton)
+                Button {
+                    showingSettings = true
+                } label: {
+                    Label("Settings", systemImage: "gearshape")
+                        .labelStyle(.iconOnly)
+                        .padding(10)
+                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                }
+                .accessibilityLabel("Settings")
+                .accessibilityHint("Feedback style, speech rate, and alert distance")
+                .accessibilityIdentifier(AccessibilityIdentifiers.settingsButton)
             }
             .padding(.horizontal)
             Spacer()
@@ -153,6 +175,7 @@ struct NavigationScreen: View {
             .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
             .padding()
             .accessibilityElement(children: .combine)
+            .accessibilityIdentifier(AccessibilityIdentifiers.statusPanel)
         }
     }
 
@@ -163,7 +186,12 @@ struct NavigationScreen: View {
     }
 
     private func guidanceDescription(item: SavedItem, guidance: ItemGuidance) -> String {
-        var description = String(format: "%@ · %.1f m at %@", item.name, guidance.distance, guidance.direction.spokenDescription)
+        let distance = SpokenDistance.description(
+            meters: guidance.distance,
+            unit: viewModel.profile.distanceUnit,
+            strideLengthMeters: viewModel.profile.strideLengthMeters
+        )
+        var description = "\(item.name) · \(distance) at \(guidance.direction.spokenDescription)"
         if guidance.heightDelta > 0.3 {
             description += ", above you"
         } else if guidance.heightDelta < -1.2 {

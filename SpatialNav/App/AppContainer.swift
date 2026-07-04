@@ -10,6 +10,7 @@ import os
 /// are constructed. Everything downstream receives protocols via initializer
 /// injection, so any piece can be tested against mocks.
 @MainActor
+@Observable
 final class AppContainer {
     let meshStore: MeshStore
     let arSessionManager: ARSessionManager
@@ -21,6 +22,9 @@ final class AppContainer {
     let findItem: FindItemUseCase
     let audioEngine: SpatialAudioEngine
     let speechQueue: SpeechQueue
+    let hapticService: HapticEngineService
+    let settingsStore: SettingsStore
+    private(set) var needsOnboarding: Bool
 
     init() {
         let meshStore = MeshStore()
@@ -52,6 +56,15 @@ final class AppContainer {
         )
         self.audioEngine = SpatialAudioEngine()
         self.speechQueue = SpeechQueue()
+        self.hapticService = HapticEngineService()
+        let settingsStore = SettingsStore()
+        self.settingsStore = settingsStore
+        self.needsOnboarding = !settingsStore.hasSavedProfile
+    }
+
+    func completeOnboarding(with profile: FeedbackProfile) {
+        settingsStore.save(profile)
+        needsOnboarding = false
     }
 
     func makeNavigationScreen() -> NavigationScreen {
@@ -68,7 +81,9 @@ final class AppContainer {
                 objectDetection: objectDetection,
                 governor: governor,
                 audio: audioEngine,
-                speech: speechQueue
+                speech: speechQueue,
+                haptics: hapticService,
+                settings: settingsStore
             ),
             arViewContainer: ARViewContainer(session: arSessionManager.session),
             makeSpacesViewModel: { [arSessionManager, spaceStore] in
@@ -76,6 +91,9 @@ final class AppContainer {
             },
             makeItemsViewModel: { [findItem] in
                 ItemsViewModel(findItem: findItem)
+            },
+            makeSettingsViewModel: { [settingsStore] onChange in
+                SettingsViewModel(store: settingsStore, onChange: onChange)
             }
         )
     }

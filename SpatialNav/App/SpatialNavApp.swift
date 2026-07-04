@@ -13,7 +13,13 @@ struct SpatialNavApp: App {
 
     var body: some Scene {
         WindowGroup {
-            container.makeNavigationScreen()
+            if container.needsOnboarding {
+                OnboardingView { profile in
+                    container.completeOnboarding(with: profile)
+                }
+            } else {
+                container.makeNavigationScreen()
+            }
         }
     }
 }
