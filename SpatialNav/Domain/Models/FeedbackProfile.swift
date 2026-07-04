@@ -37,6 +37,9 @@ nonisolated struct FeedbackProfile: Sendable, Equatable, Codable {
     var distanceUnit: DistanceUnit
     /// Used to convert meters to steps when `distanceUnit == .steps`.
     var strideLengthMeters: Float
+    /// Renders the scan mesh on screen so a sighted companion or O&M
+    /// instructor can see what the app senses.
+    var showScanOverlay: Bool
 
     static let `default` = FeedbackProfile(
         mode: .hybrid,
@@ -44,6 +47,22 @@ nonisolated struct FeedbackProfile: Sendable, Equatable, Codable {
         speechRate: 0.5,
         minimumAlertDistance: 3.0,
         distanceUnit: .meters,
-        strideLengthMeters: 0.7
+        strideLengthMeters: 0.7,
+        showScanOverlay: false
     )
+}
+
+extension FeedbackProfile {
+    /// Custom decoding so profiles saved by older builds (without newer keys)
+    /// keep loading instead of resetting the user's settings.
+    nonisolated init(from decoder: Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        mode = try container.decode(Mode.self, forKey: .mode)
+        verbosity = try container.decode(Verbosity.self, forKey: .verbosity)
+        speechRate = try container.decode(Float.self, forKey: .speechRate)
+        minimumAlertDistance = try container.decode(Float.self, forKey: .minimumAlertDistance)
+        distanceUnit = try container.decode(DistanceUnit.self, forKey: .distanceUnit)
+        strideLengthMeters = try container.decode(Float.self, forKey: .strideLengthMeters)
+        showScanOverlay = try container.decodeIfPresent(Bool.self, forKey: .showScanOverlay) ?? false
+    }
 }

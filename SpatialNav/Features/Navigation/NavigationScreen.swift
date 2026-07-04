@@ -18,6 +18,7 @@ struct NavigationScreen: View {
     private let makeItemsViewModel: () -> ItemsViewModel
     private let makeSettingsViewModel: (@escaping (FeedbackProfile) -> Void) -> SettingsViewModel
     @Environment(\.openURL) private var openURL
+    @Environment(\.accessibilityReduceTransparency) private var reduceTransparency
 
     init(
         viewModel: NavigationViewModel,
@@ -38,6 +39,7 @@ struct NavigationScreen: View {
             switch viewModel.phase {
             case .running, .interrupted:
                 arViewContainer
+                    .showingMeshOverlay(viewModel.profile.showScanOverlay)
                     .ignoresSafeArea()
                     .accessibilityLabel("Camera view of your surroundings")
                 statusOverlay
@@ -90,7 +92,7 @@ struct NavigationScreen: View {
                 Text("Session paused")
                     .font(.headline)
                     .padding(12)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .background(panelBackground, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityLabel("Guidance paused")
             }
             if let hazard = viewModel.activeHazards.max(by: { $0.priority < $1.priority }) {
@@ -105,7 +107,7 @@ struct NavigationScreen: View {
                 Text("Guidance paused")
                     .font(.headline)
                     .padding(12)
-                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                    .background(panelBackground, in: RoundedRectangle(cornerRadius: 12))
             }
             Spacer()
             if let item = viewModel.guidedItem, let guidance = viewModel.itemGuidance {
@@ -118,7 +120,7 @@ struct NavigationScreen: View {
                         .accessibilityLabel("Stop guiding to \(item.name)")
                 }
                 .padding(12)
-                .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
+                .background(panelBackground, in: RoundedRectangle(cornerRadius: 12))
                 .padding(.horizontal)
                 .accessibilityElement(children: .combine)
             }
@@ -150,7 +152,7 @@ struct NavigationScreen: View {
             }
             .padding(16)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 16))
+            .background(panelBackground, in: RoundedRectangle(cornerRadius: 16))
             .padding()
             .accessibilityElement(children: .combine)
             .accessibilityIdentifier(AccessibilityIdentifiers.statusPanel)
@@ -161,6 +163,14 @@ struct NavigationScreen: View {
         guard let obstacle = viewModel.nearestObstacle else { return "Path clear" }
         let distance = String(format: "%.1f", obstacle.distance)
         return "Nearest obstacle: \(distance) m at \(obstacle.direction.spokenDescription)"
+    }
+
+    /// Translucent materials wash out over a bright camera feed; when the user
+    /// asks for Reduce Transparency, honor it with a solid backdrop.
+    private var panelBackground: AnyShapeStyle {
+        reduceTransparency
+            ? AnyShapeStyle(Color(uiColor: .systemBackground))
+            : AnyShapeStyle(.thinMaterial)
     }
 
     /// Large thumb-reachable targets in a fixed place VoiceOver users can find
@@ -214,7 +224,7 @@ struct NavigationScreen: View {
             }
             .frame(maxWidth: .infinity)
             .padding(.vertical, 12)
-            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+            .background(panelBackground, in: RoundedRectangle(cornerRadius: 14))
         }
         .accessibilityLabel(title)
         .accessibilityHint(hint)

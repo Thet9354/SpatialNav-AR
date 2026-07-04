@@ -11,6 +11,7 @@ import SwiftUI
 /// ARKit type, because ARView must be attached to the real session.
 struct ARViewContainer: UIViewRepresentable {
     let session: ARSession
+    var showsMeshOverlay: Bool = false
 
     func makeUIView(context: Context) -> ARView {
         let arView = ARView(frame: .zero, cameraMode: .ar, automaticallyConfigureSession: false)
@@ -21,11 +22,22 @@ struct ARViewContainer: UIViewRepresentable {
             .disablePersonOcclusion,
             .disableGroundingShadows,
         ])
-        #if DEBUG
-        arView.debugOptions.insert(.showSceneUnderstanding)
-        #endif
         return arView
     }
 
-    func updateUIView(_ uiView: ARView, context: Context) {}
+    func updateUIView(_ uiView: ARView, context: Context) {
+        // User-controlled (Settings → "Show scan overlay") so a sighted
+        // companion can see what the app senses; formerly DEBUG-only.
+        if showsMeshOverlay {
+            uiView.debugOptions.insert(.showSceneUnderstanding)
+        } else {
+            uiView.debugOptions.remove(.showSceneUnderstanding)
+        }
+    }
+
+    func showingMeshOverlay(_ show: Bool) -> Self {
+        var copy = self
+        copy.showsMeshOverlay = show
+        return copy
+    }
 }

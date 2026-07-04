@@ -70,6 +70,13 @@ struct SettingsSheet: View {
                         }
                     }
                 }
+
+                Section {
+                    Toggle("Show scan overlay", isOn: $viewModel.profile.showScanOverlay)
+                        .accessibilityHint("Draws the room scan on screen so a sighted companion can see what SpatialNav senses")
+                } footer: {
+                    Text("For sighted companions and instructors. Has no effect on audio or vibration guidance.")
+                }
             }
             .navigationTitle("Settings")
             .toolbar {

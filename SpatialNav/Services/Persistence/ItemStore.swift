@@ -67,7 +67,8 @@ actor ItemStore: ItemStoring {
     private func write(_ items: [SavedItem]) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(items)
-        try data.write(to: fileURL, options: .atomic)
+        // Item names and home positions are personal: encrypted at rest.
+        try data.write(to: fileURL, options: [.atomic, .completeFileProtection])
         cache = items
     }
 }

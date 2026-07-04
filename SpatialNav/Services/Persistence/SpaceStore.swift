@@ -32,7 +32,9 @@ actor SpaceStore: SpaceStoring {
 
     func save(_ space: SavedSpace, worldMapData: Data) throws {
         try ensureDirectory()
-        try worldMapData.write(to: mapURL(for: space.id), options: .atomic)
+        // World maps encode the layout of the user's home: encrypted at rest,
+        // key derived from the device passcode.
+        try worldMapData.write(to: mapURL(for: space.id), options: [.atomic, .completeFileProtection])
         var index = try loadIndex()
         if let existing = index.firstIndex(where: { $0.id == space.id }) {
             index[existing] = space
@@ -86,7 +88,7 @@ actor SpaceStore: SpaceStoring {
     private func writeIndex(_ spaces: [SavedSpace]) throws {
         try ensureDirectory()
         let data = try JSONEncoder().encode(spaces)
-        try data.write(to: indexURL, options: .atomic)
+        try data.write(to: indexURL, options: [.atomic, .completeFileProtection])
         cachedIndex = spaces
     }
 }
