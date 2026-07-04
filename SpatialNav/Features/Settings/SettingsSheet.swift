@@ -17,6 +17,15 @@ struct SettingsSheet: View {
         @Bindable var viewModel = viewModel
         NavigationStack {
             Form {
+                Section {
+                    NavigationLink {
+                        SignalsReferenceView(viewModel: viewModel)
+                    } label: {
+                        Label("What do the signals mean?", systemImage: "waveform")
+                    }
+                    .accessibilityHint("Replays each sound and vibration with its meaning")
+                }
+
                 Section("Feedback style") {
                     Picker("Mode", selection: $viewModel.profile.mode) {
                         Text("Sound and Vibration").tag(FeedbackProfile.Mode.hybrid)

@@ -14,9 +14,7 @@ struct SpatialNavApp: App {
     var body: some Scene {
         WindowGroup {
             if container.needsOnboarding {
-                OnboardingView { profile in
-                    container.completeOnboarding(with: profile)
-                }
+                container.makeOnboardingFlow()
             } else {
                 container.makeNavigationScreen()
             }

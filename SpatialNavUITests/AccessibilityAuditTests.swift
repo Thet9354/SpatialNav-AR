@@ -31,6 +31,21 @@ final class AccessibilityAuditTests: XCTestCase {
         firstMode.tap()
 
         XCTAssertTrue(
+            app.staticTexts["Learn the Signals"].waitForExistence(timeout: 10),
+            "The sensory tutorial should follow the mode choice"
+        )
+        try performLoggedAudit(on: app)
+
+        // The start button sits at the end of the scrolled signal list.
+        let startButton = app.buttons["Start SpatialNav"]
+        var swipes = 0
+        while !startButton.isHittable && swipes < 5 {
+            app.swipeUp()
+            swipes += 1
+        }
+        startButton.tap()
+
+        XCTAssertTrue(
             app.staticTexts["Device Not Supported"].waitForExistence(timeout: 10),
             "Simulator has no AR support, so the main screen shows the unsupported state"
         )

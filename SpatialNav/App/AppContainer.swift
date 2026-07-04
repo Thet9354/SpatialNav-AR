@@ -70,6 +70,14 @@ final class AppContainer {
         needsOnboarding = false
     }
 
+    func makeOnboardingFlow() -> OnboardingFlowView {
+        OnboardingFlowView(
+            signalPlayer: SignalPlayer(audio: audioEngine, haptics: hapticService)
+        ) { [weak self] profile in
+            self?.completeOnboarding(with: profile)
+        }
+    }
+
     func makeNavigationScreen() -> NavigationScreen {
         let sonar = SonarSweepUseCase(
             provider: arSessionManager,
@@ -95,8 +103,12 @@ final class AppContainer {
             makeItemsViewModel: { [findItem] in
                 ItemsViewModel(findItem: findItem)
             },
-            makeSettingsViewModel: { [settingsStore] onChange in
-                SettingsViewModel(store: settingsStore, onChange: onChange)
+            makeSettingsViewModel: { [settingsStore, audioEngine, hapticService] onChange in
+                SettingsViewModel(
+                    store: settingsStore,
+                    signalPlayer: SignalPlayer(audio: audioEngine, haptics: hapticService),
+                    onChange: onChange
+                )
             }
         )
     }

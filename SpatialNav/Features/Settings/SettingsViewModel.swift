@@ -18,11 +18,22 @@ final class SettingsViewModel {
     }
 
     private let store: any SettingsStoring
+    private let signalPlayer: SignalPlayer
     private let onChange: (FeedbackProfile) -> Void
 
-    init(store: any SettingsStoring, onChange: @escaping (FeedbackProfile) -> Void) {
+    init(
+        store: any SettingsStoring,
+        signalPlayer: SignalPlayer,
+        onChange: @escaping (FeedbackProfile) -> Void
+    ) {
         self.profile = store.loadProfile()
         self.store = store
+        self.signalPlayer = signalPlayer
         self.onChange = onChange
+    }
+
+    func play(_ demo: SignalDemo) {
+        signalPlayer.prepare()
+        signalPlayer.play(demo.event, profile: profile)
     }
 }
