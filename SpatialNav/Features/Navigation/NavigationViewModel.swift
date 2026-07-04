@@ -30,6 +30,8 @@ final class NavigationViewModel {
     private(set) var processingTier: ProcessingTier = .full
     private(set) var guidedItem: SavedItem?
     private(set) var itemGuidance: ItemGuidance?
+    private(set) var isPaused = false
+    private var announcedReady = false
 
     var lidarAvailable: Bool {
         provider.capabilities.supportsSceneReconstruction
@@ -104,8 +106,33 @@ final class NavigationViewModel {
         itemGuidance = nil
     }
 
+    /// Silences all guidance feedback while keeping tracking warm — sitting
+    /// down for lunch shouldn't require quitting the app. Mapped to VoiceOver's
+    /// Magic Tap as well as the Pause button.
+    func togglePause() {
+        isPaused.toggle()
+        announceStatus(isPaused ? "Guidance paused." : "Guidance resumed.", priority: .high)
+    }
+
+    /// On-demand verbal snapshot of the surroundings. Spoken directly (not
+    /// profile-routed): an explicit request for description is an explicit
+    /// request for speech.
+    func describeScene() {
+        let text = SceneDescriber.describe(
+            objects: detectedObjects,
+            nearestObstacle: nearestObstacle,
+            hazards: activeHazards,
+            unit: profile.distanceUnit,
+            strideLengthMeters: profile.strideLengthMeters
+        )
+        latestAlert = FeedbackEvent(kind: .navigationCue, priority: .high, direction: nil, distance: nil, message: text)
+        let speech = speech
+        Task { await speech.announce(text, priority: .high) }
+    }
+
     func start() async {
         guard phase != .running else { return }
+        announcedReady = false
         apply(profile: settings.loadProfile())
         guard provider.capabilities.supportsWorldTracking else {
             phase = .unsupportedDevice
@@ -242,6 +269,16 @@ final class NavigationViewModel {
         if snapshot.worldMappingStatus != worldMappingStatus {
             worldMappingStatus = snapshot.worldMappingStatus
         }
+
+        // A blind user standing in a hallway needs to know when it is safe to
+        // start walking; announce readiness once per session.
+        if !announcedReady, snapshot.trackingQuality == .normal {
+            announcedReady = true
+            announceStatus("SpatialNav ready. Guidance is on.", priority: .normal)
+        }
+
+        // While paused: tracking and HUD stay live, all guidance output stops.
+        guard !isPaused else { return }
 
         // Stuck relocalization: give up honestly and start a fresh session
         // rather than guiding on stale data.

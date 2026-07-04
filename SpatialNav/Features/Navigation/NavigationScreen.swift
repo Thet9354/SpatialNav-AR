@@ -64,6 +64,9 @@ struct NavigationScreen: View {
                 }
             }
         }
+        // VoiceOver's system-wide two-finger double-tap: the pause idiom
+        // blind users already know from every media app.
+        .accessibilityAction(.magicTap) { viewModel.togglePause() }
         .task { await viewModel.start() }
         .onDisappear { viewModel.stop() }
         .sheet(isPresented: $showingSpaces) {
@@ -98,39 +101,12 @@ struct NavigationScreen: View {
                     .background(.red, in: RoundedRectangle(cornerRadius: 12))
                     .accessibilityAddTraits(.isStaticText)
             }
-            HStack {
-                Spacer()
-                Button {
-                    showingItems = true
-                } label: {
-                    Label("Items", systemImage: "viewfinder")
-                        .padding(10)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .accessibilityHint("Save an item you're pointing at, or find a saved one")
-                .accessibilityIdentifier(AccessibilityIdentifiers.itemsButton)
-                Button {
-                    showingSpaces = true
-                } label: {
-                    Label("Spaces", systemImage: "square.grid.2x2")
-                        .padding(10)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .accessibilityHint("Save this room or return to a saved one")
-                .accessibilityIdentifier(AccessibilityIdentifiers.spacesButton)
-                Button {
-                    showingSettings = true
-                } label: {
-                    Label("Settings", systemImage: "gearshape")
-                        .labelStyle(.iconOnly)
-                        .padding(10)
-                        .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
-                }
-                .accessibilityLabel("Settings")
-                .accessibilityHint("Feedback style, speech rate, and alert distance")
-                .accessibilityIdentifier(AccessibilityIdentifiers.settingsButton)
+            if viewModel.isPaused {
+                Text("Guidance paused")
+                    .font(.headline)
+                    .padding(12)
+                    .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 12))
             }
-            .padding(.horizontal)
             Spacer()
             if let item = viewModel.guidedItem, let guidance = viewModel.itemGuidance {
                 HStack {
@@ -146,6 +122,8 @@ struct NavigationScreen: View {
                 .padding(.horizontal)
                 .accessibilityElement(children: .combine)
             }
+            controlBar
+                .padding(.horizontal)
             VStack(alignment: .leading, spacing: 4) {
                 Text(viewModel.trackingQuality.statusDescription)
                     .font(.headline)
@@ -183,6 +161,64 @@ struct NavigationScreen: View {
         guard let obstacle = viewModel.nearestObstacle else { return "Path clear" }
         let distance = String(format: "%.1f", obstacle.distance)
         return "Nearest obstacle: \(distance) m at \(obstacle.direction.spokenDescription)"
+    }
+
+    /// Large thumb-reachable targets in a fixed place VoiceOver users can find
+    /// predictably — the old top-corner buttons were developer-sized.
+    private var controlBar: some View {
+        HStack(spacing: 8) {
+            controlButton(
+                title: viewModel.isPaused ? "Resume" : "Pause",
+                systemImage: viewModel.isPaused ? "play.fill" : "pause.fill",
+                hint: "Pauses or resumes all guidance. Also two-finger double-tap with VoiceOver."
+            ) { viewModel.togglePause() }
+            controlButton(
+                title: "Describe",
+                systemImage: "text.bubble",
+                hint: "Speaks what is around you right now"
+            ) { viewModel.describeScene() }
+            controlButton(
+                title: "Items",
+                systemImage: "viewfinder",
+                hint: "Save an item you're pointing at, or find a saved one",
+                identifier: AccessibilityIdentifiers.itemsButton
+            ) { showingItems = true }
+            controlButton(
+                title: "Spaces",
+                systemImage: "square.grid.2x2",
+                hint: "Save this room or return to a saved one",
+                identifier: AccessibilityIdentifiers.spacesButton
+            ) { showingSpaces = true }
+            controlButton(
+                title: "Settings",
+                systemImage: "gearshape",
+                hint: "Feedback style, speech rate, and alert distance",
+                identifier: AccessibilityIdentifiers.settingsButton
+            ) { showingSettings = true }
+        }
+    }
+
+    private func controlButton(
+        title: String,
+        systemImage: String,
+        hint: String,
+        identifier: String? = nil,
+        action: @escaping () -> Void
+    ) -> some View {
+        Button(action: action) {
+            VStack(spacing: 4) {
+                Image(systemName: systemImage)
+                    .font(.title3)
+                Text(title)
+                    .font(.caption)
+            }
+            .frame(maxWidth: .infinity)
+            .padding(.vertical, 12)
+            .background(.thinMaterial, in: RoundedRectangle(cornerRadius: 14))
+        }
+        .accessibilityLabel(title)
+        .accessibilityHint(hint)
+        .accessibilityIdentifier(identifier ?? "navigation.\(title.lowercased())Button")
     }
 
     private func guidanceDescription(item: SavedItem, guidance: ItemGuidance) -> String {
