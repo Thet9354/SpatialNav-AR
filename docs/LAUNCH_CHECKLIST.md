@@ -6,7 +6,7 @@ within 2–3 days of enrolling**, most of it waiting on Apple.
 
 ## Before enrolling (can do today, zero cost)
 
-- [ ] App icon finished and dropped into `Assets.xcassets/AppIcon.appiconset` (spec in APP_STORE_KIT.md)
+- [x] App icon finished and installed in `Assets.xcassets/AppIcon.appiconset` (light/dark/tinted, no alpha; vector sources in `design/icon/`)
 - [ ] Record the demo video for App Review (shot list in APP_STORE_KIT.md); upload unlisted to YouTube; paste link into the Review Notes section of APP_STORE_KIT.md
 - [ ] Capture the 6 screenshots on device (shot list in APP_STORE_KIT.md)
 - [ ] Run the Instruments pass (Time Profiler + 20-min thermal soak) and stash screenshots for the README

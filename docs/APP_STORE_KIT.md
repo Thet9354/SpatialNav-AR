@@ -104,10 +104,14 @@ a step → point at chair, HUD labels it → "Describe" spoken summary → tagli
 card: "SpatialNav. Sonar for indoor navigation." Record device screen +
 external phone audio so reviewers hear the spatial pings.
 
-## App icon (needed before archive — user task)
+## App icon — DONE
 
-- 1024×1024 PNG, no transparency, no rounded corners (iOS masks it).
-- Concept suggestion: concentric sonar arcs radiating from a small person/phone
-  silhouette, white on deep blue (#0A3D91-ish), bold and legible at 60 px.
-  High contrast — the icon should itself be low-vision friendly.
-- Drop into `SpatialNav/Assets.xcassets/AppIcon.appiconset` (single 1024 slot).
+- Concentric sonar arcs radiating from a "you are here" navigation dot, white on
+  deep blue — reads as both spatial sonar and a Maps-style location beacon.
+- Shipped as three iOS 18 appearances (light / dark / tinted), each 1024×1024,
+  RGB, **no alpha channel** (App Store requirement, verified with `sips`).
+- Editable vector sources: `design/icon/icon-{light,dark,tinted}.svg`.
+  Regenerate PNGs: `rsvg-convert -w 1024 -h 1024 icon-light.svg -o out.png`
+  then flatten to RGB (drop alpha) before use.
+- Installed in `SpatialNav/Assets.xcassets/AppIcon.appiconset`; verified it
+  compiles via `actool` and scales to all sizes with no warnings.
